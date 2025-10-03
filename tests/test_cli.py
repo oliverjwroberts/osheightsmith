@@ -58,7 +58,7 @@ class TestGenerateCommand:
 
         assert result.exit_code == 0
         mock_generator.generate_heightmap.assert_called_once_with(
-            grid_ref="ST1876", size_km=20, output_path=output_path, bit_depth=16
+            grid_ref="ST1876", size_km=20, output_path=output_path, bit_depth=16, fill_missing=True
         )
 
     @patch("src.osheightsmith.cli.HeightmapGenerator")
@@ -78,7 +78,7 @@ class TestGenerateCommand:
 
         assert result.exit_code == 0
         mock_generator.generate_heightmap.assert_called_once_with(
-            grid_ref="ST1876", size_km=15, output_path=output_path, bit_depth=8
+            grid_ref="ST1876", size_km=15, output_path=output_path, bit_depth=8, fill_missing=True
         )
 
     def test_generate_invalid_bit_depth(self, tmp_path):
@@ -143,6 +143,26 @@ class TestGenerateCommand:
 
         assert result.exit_code != 0
         # Typer will show usage/error message
+
+    @patch("src.osheightsmith.cli.HeightmapGenerator")
+    def test_generate_with_no_fill_missing(self, mock_generator_class, tmp_path):
+        """Test generate command with --no-fill-missing flag."""
+        mock_generator = mock_generator_class.return_value
+        output_path = str(tmp_path / "output.png")
+        mock_generator.generate_heightmap.return_value = (output_path, 200, 200)
+
+        zip_path = tmp_path / "test.zip"
+        zip_path.touch()
+
+        result = runner.invoke(
+            app, ["generate", "ST1876", "--zip-path", str(zip_path), "--no-fill-missing"]
+        )
+
+        assert result.exit_code == 0
+        mock_generator.generate_heightmap.assert_called_once()
+        # Verify fill_missing=False was passed
+        call_kwargs = mock_generator.generate_heightmap.call_args.kwargs
+        assert call_kwargs["fill_missing"] is False
 
 
 class TestInfoCommand:

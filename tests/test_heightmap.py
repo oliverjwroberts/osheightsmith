@@ -292,3 +292,53 @@ class TestGenerateHeightmap:
 
         with pytest.raises(ValueError, match="bit_depth must be 8 or 16"):
             generator.generate_heightmap("ST1876", 10, bit_depth=32)
+
+    @patch.object(HeightmapGenerator, "_load_tile")
+    def test_generate_with_missing_tiles_filled(self, mock_load_tile, tmp_path):
+        """Test generating heightmap with missing tiles filled with zeros."""
+        zip_path = tmp_path / "test.zip"
+        zip_path.touch()
+
+        header = ASCHeader(
+            ncols=200,
+            nrows=200,
+            xllcorner=310000,
+            yllcorner=170000,
+            cellsize=50,
+            nodata_value=-9999,
+        )
+        data = np.random.rand(200, 200).astype(np.float32) * 100
+
+        # Simulate some tiles being missing (return None)
+        def load_tile_side_effect(tile_name, fill_missing=False):
+            if tile_name == "st17":
+                return (header, data)
+            elif fill_missing:
+                # Return zero-filled placeholder
+                from src.osheightsmith.grid_reference import get_tile_corner
+
+                xllcorner, yllcorner = get_tile_corner(tile_name)
+                placeholder_header = ASCHeader(
+                    ncols=200,
+                    nrows=200,
+                    xllcorner=xllcorner,
+                    yllcorner=yllcorner,
+                    cellsize=50,
+                    nodata_value=-9999,
+                )
+                return (placeholder_header, np.zeros((200, 200), dtype=np.float32))
+            else:
+                return None
+
+        mock_load_tile.side_effect = load_tile_side_effect
+
+        generator = HeightmapGenerator(str(zip_path))
+
+        output_path = tmp_path / "output_with_fill.png"
+        result_path, width, height = generator.generate_heightmap(
+            "ST1876", 10, str(output_path), bit_depth=8, fill_missing=True
+        )
+
+        assert Path(result_path).exists()
+        # Should have called _load_tile with fill_missing=True
+        assert mock_load_tile.call_count >= 1

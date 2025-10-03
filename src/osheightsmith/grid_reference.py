@@ -173,6 +173,44 @@ def get_tile_name(easting: int, northing: int) -> str:
     return f"{square_code}{tile_e}{tile_n}"
 
 
+def get_tile_corner(tile_name: str) -> Tuple[int, int]:
+    """
+    Get the lower-left corner coordinates of a tile.
+
+    Args:
+        tile_name: Tile name like "st17"
+
+    Returns:
+        Tuple of (xllcorner, yllcorner) in meters
+
+    Raises:
+        ValueError: If tile name format is invalid
+    """
+    # Parse tile name: 2 letters + 2 digits
+    match = re.match(r"^([a-z]{2})(\d)(\d)$", tile_name.lower())
+    if not match:
+        raise ValueError(f"Invalid tile name format: {tile_name}")
+
+    square_code, tile_e_str, tile_n_str = match.groups()
+
+    # Find the 100km square
+    square_code_upper = square_code.upper()
+    if square_code_upper not in GRID_SQUARES:
+        raise ValueError(f"Invalid grid square code: {square_code}")
+
+    square_e, square_n = GRID_SQUARES[square_code_upper]
+
+    # Calculate tile coordinates
+    tile_e = int(tile_e_str)
+    tile_n = int(tile_n_str)
+
+    # Calculate lower-left corner
+    xllcorner = square_e * 100000 + tile_e * 10000
+    yllcorner = square_n * 100000 + tile_n * 10000
+
+    return xllcorner, yllcorner
+
+
 def get_tiles_for_area(center_e: int, center_n: int, size_km: int) -> list[str]:
     """
     Get list of tile names needed to cover an area.

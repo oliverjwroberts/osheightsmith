@@ -58,5 +58,6 @@ Grid Reference Information
 - `--zip-path`, `-z`: Path to OS Terrain 50 zip file (default: `data/terr50_gagg_gb.zip`)
 - `--output`, `-o`: Output PNG filename (default: auto-generated in `heightmaps/`)
 - `--bit-depth`, `-b`: Bit depth for PNG, 8 or 16 (default: 16)
+- `--fill-missing` / `--no-fill-missing`: Fill missing tiles with zero-height placeholders (default: enabled)
 
 

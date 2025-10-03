@@ -48,6 +48,11 @@ def generate(
         "-b",
         help="Bit depth for PNG (8 or 16)",
     ),
+    fill_missing: bool = typer.Option(
+        True,
+        "--fill-missing/--no-fill-missing",
+        help="Fill missing tiles with zero-height placeholders",
+    ),
 ) -> None:
     """
     Generate a square PNG heightmap from OS Terrain 50 data.
@@ -74,6 +79,7 @@ def generate(
             size_km=size,
             output_path=output,
             bit_depth=bit_depth,
+            fill_missing=fill_missing,
         )
 
         # Display results

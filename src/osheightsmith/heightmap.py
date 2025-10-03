@@ -26,12 +26,15 @@ class HeightmapGenerator:
         if not self.terrain_zip_path.exists():
             raise FileNotFoundError(f"Terrain data not found: {terrain_zip_path}")
 
-    def _load_tile(self, tile_name: str) -> Optional[tuple[ASCHeader, np.ndarray]]:
+    def _load_tile(
+        self, tile_name: str, fill_missing: bool = False
+    ) -> Optional[tuple[ASCHeader, np.ndarray]]:
         """
         Load a single tile from the nested zip structure.
 
         Args:
             tile_name: Tile name like "st17"
+            fill_missing: If True, create zero-filled placeholder for missing tiles
 
         Returns:
             Tuple of (header, data) or None if tile not found
@@ -53,6 +56,8 @@ class HeightmapGenerator:
                     break
 
             if not tile_zip_name:
+                if fill_missing:
+                    return self._create_placeholder_tile(tile_name)
                 return None
 
             # Read the nested zip
@@ -63,9 +68,40 @@ class HeightmapGenerator:
                     # Find the .asc file
                     asc_files = [f for f in tile_zip.namelist() if f.endswith(".asc")]
                     if not asc_files:
+                        if fill_missing:
+                            return self._create_placeholder_tile(tile_name)
                         return None
 
                     return load_asc_from_zip(tile_zip, asc_files[0])
+
+    def _create_placeholder_tile(self, tile_name: str) -> tuple[ASCHeader, np.ndarray]:
+        """
+        Create a zero-filled placeholder tile for missing data.
+
+        Args:
+            tile_name: Tile name like "st17"
+
+        Returns:
+            Tuple of (header, data) with zeros
+        """
+        from .grid_reference import get_tile_corner
+
+        xllcorner, yllcorner = get_tile_corner(tile_name)
+
+        # Standard OS Terrain 50 tile dimensions
+        header = ASCHeader(
+            ncols=200,
+            nrows=200,
+            xllcorner=xllcorner,
+            yllcorner=yllcorner,
+            cellsize=50,
+            nodata_value=-9999,
+        )
+
+        # Create zero-filled data
+        data = np.zeros((200, 200), dtype=np.float32)
+
+        return header, data
 
     def generate_heightmap(
         self,
@@ -73,6 +109,7 @@ class HeightmapGenerator:
         size_km: int,
         output_path: Optional[str] = None,
         bit_depth: int = 8,
+        fill_missing: bool = True,
     ) -> tuple[str, int, int]:
         """
         Generate a square heightmap from a grid reference.
@@ -82,6 +119,7 @@ class HeightmapGenerator:
             size_km: Size of the area in kilometers
             output_path: Output PNG path (default: auto-generated)
             bit_depth: Bit depth for PNG (8 or 16)
+            fill_missing: If True, fill missing tiles with zero-height placeholders
 
         Returns:
             Tuple of (output_path, width, height)
@@ -104,7 +142,7 @@ class HeightmapGenerator:
         # Load all tiles
         tile_data = {}
         for tile_name in tiles:
-            data = self._load_tile(tile_name)
+            data = self._load_tile(tile_name, fill_missing=fill_missing)
             if data:
                 tile_data[tile_name] = data
 

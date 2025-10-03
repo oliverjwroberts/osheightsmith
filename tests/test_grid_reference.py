@@ -4,6 +4,7 @@ import pytest
 
 from src.osheightsmith.grid_reference import (
     GRID_SQUARES,
+    get_tile_corner,
     get_tile_name,
     get_tiles_for_area,
     parse_grid_reference,
@@ -114,6 +115,43 @@ class TestGetTileName:
         """Test that coordinates outside valid grid raise ValueError."""
         with pytest.raises(ValueError, match="outside valid grid"):
             get_tile_name(-10_000, 0)
+
+
+class TestGetTileCorner:
+    """Test tile corner coordinate calculation."""
+
+    @pytest.mark.parametrize(
+        "tile_name,expected_x,expected_y",
+        [
+            ("st17", 310_000, 170_000),
+            ("st27", 320_000, 170_000),
+            ("st18", 310_000, 180_000),
+            ("hp40", 440_000, 1_200_000),
+            ("sv00", 0, 0),
+        ],
+    )
+    def test_get_tile_corner(self, tile_name, expected_x, expected_y):
+        """Test getting corner coordinates for various tiles."""
+        xllcorner, yllcorner = get_tile_corner(tile_name)
+        assert xllcorner == expected_x
+        assert yllcorner == expected_y
+
+    def test_get_tile_corner_case_insensitive(self):
+        """Test that tile name is case-insensitive."""
+        x1, y1 = get_tile_corner("ST17")
+        x2, y2 = get_tile_corner("st17")
+        assert x1 == x2
+        assert y1 == y2
+
+    def test_get_tile_corner_invalid_format(self):
+        """Test that invalid tile name raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid tile name format"):
+            get_tile_corner("invalid")
+
+    def test_get_tile_corner_invalid_square(self):
+        """Test that invalid grid square raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid grid square code"):
+            get_tile_corner("zz17")
 
 
 class TestGetTilesForArea:
