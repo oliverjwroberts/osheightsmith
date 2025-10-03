@@ -51,7 +51,13 @@ def generate(
     fill_missing: bool = typer.Option(
         True,
         "--fill-missing/--no-fill-missing",
-        help="Fill missing tiles with zero-height placeholders",
+        help="Fill missing tiles with placeholders",
+    ),
+    interpolation: str = typer.Option(
+        "linear",
+        "--interpolation",
+        "-i",
+        help="Interpolation method for missing tiles (none, nearest, linear, cubic)",
     ),
 ) -> None:
     """
@@ -64,6 +70,12 @@ def generate(
         # Validate inputs
         if bit_depth not in [8, 16]:
             console.print("[red]Error: bit-depth must be 8 or 16[/red]")
+            raise typer.Exit(1)
+
+        if interpolation not in ["none", "nearest", "linear", "cubic"]:
+            console.print(
+                "[red]Error: interpolation must be one of: none, nearest, linear, cubic[/red]"
+            )
             raise typer.Exit(1)
 
         # Create generator
@@ -80,6 +92,7 @@ def generate(
             output_path=output,
             bit_depth=bit_depth,
             fill_missing=fill_missing,
+            interpolation=interpolation,
         )
 
         # Display results

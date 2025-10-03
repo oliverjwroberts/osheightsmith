@@ -58,6 +58,32 @@ Grid Reference Information
 - `--zip-path`, `-z`: Path to OS Terrain 50 zip file (default: `data/terr50_gagg_gb.zip`)
 - `--output`, `-o`: Output PNG filename (default: auto-generated in `heightmaps/`)
 - `--bit-depth`, `-b`: Bit depth for PNG, 8 or 16 (default: 16)
-- `--fill-missing` / `--no-fill-missing`: Fill missing tiles with zero-height placeholders (default: enabled)
+- `--fill-missing` / `--no-fill-missing`: Fill missing tiles with placeholders (default: enabled)
+- `--interpolation`, `-i`: Interpolation method for missing tiles (default: linear)
+  - `none`: Fill with zeros (fastest, creates discontinuities)
+  - `nearest`: Nearest neighbor interpolation (fast, blocky)
+  - `linear`: Linear interpolation (balanced, smooth transitions)
+  - `cubic`: Cubic interpolation (slowest, smoothest)
+
+### Interpolation for Missing Tiles
+
+When generating heightmaps for coastal areas or regions with missing data, you can choose how to handle gaps:
+
+```bash
+# Use linear interpolation (default) - good balance of speed and quality
+uv run main.py generate ST1876
+
+# Use cubic interpolation for smoother, more natural-looking results
+uv run main.py generate ST1876 --interpolation cubic
+
+# Disable interpolation to fill with zeros (old behavior)
+uv run main.py generate ST1876 --interpolation none
+```
+
+**Recommended settings:**
+- For visualization/rendering: `cubic` (smoothest, most realistic)
+- For general use: `linear` (good balance, default)
+- For speed: `nearest` (faster but less smooth)
+- For backwards compatibility: `none` (fills with zeros)
 
 

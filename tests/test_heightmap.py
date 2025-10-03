@@ -310,7 +310,7 @@ class TestGenerateHeightmap:
         data = np.random.rand(200, 200).astype(np.float32) * 100
 
         # Simulate some tiles being missing (return None)
-        def load_tile_side_effect(tile_name, fill_missing=False):
+        def load_tile_side_effect(tile_name, fill_missing=False, interpolate=False):
             if tile_name == "st17":
                 return (header, data)
             elif fill_missing:
@@ -326,7 +326,8 @@ class TestGenerateHeightmap:
                     cellsize=50,
                     nodata_value=-9999,
                 )
-                return (placeholder_header, np.zeros((200, 200), dtype=np.float32))
+                fill_value = -9998.0 if interpolate else 0.0
+                return (placeholder_header, np.full((200, 200), fill_value, dtype=np.float32))
             else:
                 return None
 
@@ -336,9 +337,104 @@ class TestGenerateHeightmap:
 
         output_path = tmp_path / "output_with_fill.png"
         result_path, width, height = generator.generate_heightmap(
-            "ST1876", 10, str(output_path), bit_depth=8, fill_missing=True
+            "ST1876", 10, str(output_path), bit_depth=8, fill_missing=True, interpolation="none"
         )
 
         assert Path(result_path).exists()
         # Should have called _load_tile with fill_missing=True
         assert mock_load_tile.call_count >= 1
+
+
+class TestInterpolateMissingData:
+    """Test interpolation functionality."""
+
+    def test_interpolate_with_linear(self):
+        """Test linear interpolation of missing data."""
+        # Create a simple heightmap with missing data in the middle
+        heightmap = np.array(
+            [
+                [10.0, 20.0, 30.0, 40.0],
+                [15.0, -9998.0, -9998.0, 45.0],
+                [20.0, -9998.0, -9998.0, 50.0],
+                [25.0, 35.0, 45.0, 55.0],
+            ],
+            dtype=np.float32,
+        )
+
+        generator = HeightmapGenerator.__new__(HeightmapGenerator)
+        result = generator._interpolate_missing_data(heightmap, method="linear")
+
+        # Check that interpolation markers are gone
+        assert -9998.0 not in result
+        # Check that valid data is preserved
+        assert result[0, 0] == 10.0
+        assert result[3, 3] == 55.0
+        # Check that interpolated values are reasonable
+        assert result[1, 1] > 0.0  # Should be interpolated from surrounding values
+
+    def test_interpolate_with_nearest(self):
+        """Test nearest neighbor interpolation."""
+        heightmap = np.array([[10.0, 20.0], [-9998.0, 30.0]], dtype=np.float32)
+
+        generator = HeightmapGenerator.__new__(HeightmapGenerator)
+        result = generator._interpolate_missing_data(heightmap, method="nearest")
+
+        # Check that interpolation markers are gone
+        assert -9998.0 not in result
+        # Nearest should fill with nearby value
+        assert result[1, 0] in [10.0, 20.0, 30.0]
+
+    def test_interpolate_with_cubic(self):
+        """Test cubic interpolation."""
+        heightmap = np.zeros((10, 10), dtype=np.float32)
+        heightmap[5, 5] = -9998.0  # Single missing point
+        heightmap[heightmap != -9998.0] = 50.0
+
+        generator = HeightmapGenerator.__new__(HeightmapGenerator)
+        result = generator._interpolate_missing_data(heightmap, method="cubic")
+
+        # Should interpolate the missing value
+        assert -9998.0 not in result
+        # Should be close to surrounding values
+        assert 40.0 <= result[5, 5] <= 60.0
+
+    def test_interpolate_no_missing_data(self):
+        """Test interpolation when no data is missing."""
+        heightmap = np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32)
+
+        generator = HeightmapGenerator.__new__(HeightmapGenerator)
+        result = generator._interpolate_missing_data(heightmap, method="linear")
+
+        # Should be unchanged
+        np.testing.assert_array_equal(result, heightmap)
+
+    def test_interpolate_all_missing(self):
+        """Test interpolation when all data is missing."""
+        heightmap = np.full((5, 5), -9998.0, dtype=np.float32)
+
+        generator = HeightmapGenerator.__new__(HeightmapGenerator)
+        result = generator._interpolate_missing_data(heightmap, method="linear")
+
+        # Should fill with zeros as fallback
+        assert np.all(result == 0.0)
+
+    def test_interpolate_preserves_nodata(self):
+        """Test that NODATA (-9999) is preserved during interpolation."""
+        heightmap = np.array(
+            [
+                [10.0, 20.0, -9999.0],
+                [-9998.0, 30.0, -9999.0],
+                [40.0, 50.0, -9999.0],
+            ],
+            dtype=np.float32,
+        )
+
+        generator = HeightmapGenerator.__new__(HeightmapGenerator)
+        result = generator._interpolate_missing_data(heightmap, method="linear")
+
+        # NODATA should be preserved
+        assert result[0, 2] == -9999.0
+        assert result[1, 2] == -9999.0
+        assert result[2, 2] == -9999.0
+        # Interpolation marker should be filled
+        assert result[1, 0] != -9998.0

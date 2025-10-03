@@ -58,7 +58,12 @@ class TestGenerateCommand:
 
         assert result.exit_code == 0
         mock_generator.generate_heightmap.assert_called_once_with(
-            grid_ref="ST1876", size_km=20, output_path=output_path, bit_depth=16, fill_missing=True
+            grid_ref="ST1876",
+            size_km=20,
+            output_path=output_path,
+            bit_depth=16,
+            fill_missing=True,
+            interpolation="linear",
         )
 
     @patch("src.osheightsmith.cli.HeightmapGenerator")
@@ -78,7 +83,12 @@ class TestGenerateCommand:
 
         assert result.exit_code == 0
         mock_generator.generate_heightmap.assert_called_once_with(
-            grid_ref="ST1876", size_km=15, output_path=output_path, bit_depth=8, fill_missing=True
+            grid_ref="ST1876",
+            size_km=15,
+            output_path=output_path,
+            bit_depth=8,
+            fill_missing=True,
+            interpolation="linear",
         )
 
     def test_generate_invalid_bit_depth(self, tmp_path):
@@ -163,6 +173,71 @@ class TestGenerateCommand:
         # Verify fill_missing=False was passed
         call_kwargs = mock_generator.generate_heightmap.call_args.kwargs
         assert call_kwargs["fill_missing"] is False
+
+    @patch("src.osheightsmith.cli.HeightmapGenerator")
+    def test_generate_with_interpolation_cubic(self, mock_generator_class, tmp_path):
+        """Test generate command with cubic interpolation."""
+        mock_generator = mock_generator_class.return_value
+        output_path = str(tmp_path / "output.png")
+        mock_generator.generate_heightmap.return_value = (output_path, 200, 200)
+
+        zip_path = tmp_path / "test.zip"
+        zip_path.touch()
+
+        result = runner.invoke(
+            app,
+            [
+                "generate",
+                "ST1876",
+                "--zip-path",
+                str(zip_path),
+                "--interpolation",
+                "cubic",
+            ],
+        )
+
+        assert result.exit_code == 0
+        call_kwargs = mock_generator.generate_heightmap.call_args.kwargs
+        assert call_kwargs["interpolation"] == "cubic"
+
+    @patch("src.osheightsmith.cli.HeightmapGenerator")
+    def test_generate_with_interpolation_none(self, mock_generator_class, tmp_path):
+        """Test generate command with interpolation disabled."""
+        mock_generator = mock_generator_class.return_value
+        output_path = str(tmp_path / "output.png")
+        mock_generator.generate_heightmap.return_value = (output_path, 200, 200)
+
+        zip_path = tmp_path / "test.zip"
+        zip_path.touch()
+
+        result = runner.invoke(
+            app,
+            ["generate", "ST1876", "--zip-path", str(zip_path), "-i", "none"],
+        )
+
+        assert result.exit_code == 0
+        call_kwargs = mock_generator.generate_heightmap.call_args.kwargs
+        assert call_kwargs["interpolation"] == "none"
+
+    def test_generate_invalid_interpolation(self, tmp_path):
+        """Test generate command with invalid interpolation method."""
+        zip_path = tmp_path / "test.zip"
+        zip_path.touch()
+
+        result = runner.invoke(
+            app,
+            [
+                "generate",
+                "ST1876",
+                "--interpolation",
+                "invalid",
+                "--zip-path",
+                str(zip_path),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "interpolation must be" in result.stdout.lower()
 
 
 class TestInfoCommand:

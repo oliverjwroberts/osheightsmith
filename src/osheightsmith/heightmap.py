@@ -3,10 +3,11 @@
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import numpy as np
 from PIL import Image
+from scipy.interpolate import griddata
 
 from .asc_parser import ASCHeader, load_asc_from_zip
 from .grid_reference import get_tiles_for_area, parse_grid_reference
@@ -27,14 +28,15 @@ class HeightmapGenerator:
             raise FileNotFoundError(f"Terrain data not found: {terrain_zip_path}")
 
     def _load_tile(
-        self, tile_name: str, fill_missing: bool = False
+        self, tile_name: str, fill_missing: bool = False, interpolate: bool = False
     ) -> Optional[tuple[ASCHeader, np.ndarray]]:
         """
         Load a single tile from the nested zip structure.
 
         Args:
             tile_name: Tile name like "st17"
-            fill_missing: If True, create zero-filled placeholder for missing tiles
+            fill_missing: If True, create placeholder for missing tiles
+            interpolate: If True, use interpolation marker instead of zeros
 
         Returns:
             Tuple of (header, data) or None if tile not found
@@ -57,7 +59,7 @@ class HeightmapGenerator:
 
             if not tile_zip_name:
                 if fill_missing:
-                    return self._create_placeholder_tile(tile_name)
+                    return self._create_placeholder_tile(tile_name, interpolate=interpolate)
                 return None
 
             # Read the nested zip
@@ -69,20 +71,23 @@ class HeightmapGenerator:
                     asc_files = [f for f in tile_zip.namelist() if f.endswith(".asc")]
                     if not asc_files:
                         if fill_missing:
-                            return self._create_placeholder_tile(tile_name)
+                            return self._create_placeholder_tile(tile_name, interpolate=interpolate)
                         return None
 
                     return load_asc_from_zip(tile_zip, asc_files[0])
 
-    def _create_placeholder_tile(self, tile_name: str) -> tuple[ASCHeader, np.ndarray]:
+    def _create_placeholder_tile(
+        self, tile_name: str, interpolate: bool = False
+    ) -> tuple[ASCHeader, np.ndarray]:
         """
-        Create a zero-filled placeholder tile for missing data.
+        Create a placeholder tile for missing data.
 
         Args:
             tile_name: Tile name like "st17"
+            interpolate: If True, use marker value for interpolation; if False, use zeros
 
         Returns:
-            Tuple of (header, data) with zeros
+            Tuple of (header, data) with zeros or interpolation marker
         """
         from .grid_reference import get_tile_corner
 
@@ -98,10 +103,69 @@ class HeightmapGenerator:
             nodata_value=-9999,
         )
 
-        # Create zero-filled data
-        data = np.zeros((200, 200), dtype=np.float32)
+        # Create placeholder data
+        # Use -9998 as marker for "needs interpolation" to distinguish from NODATA (-9999)
+        fill_value = -9998.0 if interpolate else 0.0
+        data = np.full((200, 200), fill_value, dtype=np.float32)
 
         return header, data
+
+    def _interpolate_missing_data(
+        self,
+        heightmap: np.ndarray,
+        method: Literal["nearest", "linear", "cubic"] = "linear",
+    ) -> np.ndarray:
+        """
+        Interpolate missing data regions using boundary pixels from neighboring tiles.
+
+        Args:
+            heightmap: Array with -9998 values marking regions needing interpolation
+            method: Interpolation method ('nearest', 'linear', or 'cubic')
+
+        Returns:
+            Heightmap with interpolated values
+        """
+        # Identify pixels needing interpolation (-9998) vs valid data
+        needs_interp = heightmap == -9998.0
+        is_nodata = heightmap == -9999.0
+        has_valid_data = ~needs_interp & ~is_nodata
+
+        # If nothing needs interpolation, return as-is
+        if not np.any(needs_interp):
+            return heightmap
+
+        # If no valid data exists, cannot interpolate
+        if not np.any(has_valid_data):
+            # Fill with zeros as fallback
+            heightmap[needs_interp] = 0.0
+            return heightmap
+
+        # Get coordinates and values of valid data points
+        rows, cols = np.where(has_valid_data)
+        values = heightmap[has_valid_data]
+
+        # Get coordinates of points needing interpolation
+        interp_rows, interp_cols = np.where(needs_interp)
+        interp_points = np.column_stack([interp_rows, interp_cols])
+
+        # Perform interpolation
+        try:
+            interpolated_values = griddata(
+                points=np.column_stack([rows, cols]),
+                values=values,
+                xi=interp_points,
+                method=method,
+                fill_value=0.0,  # Fallback for points outside convex hull
+            )
+
+            # Fill in the interpolated values
+            heightmap[needs_interp] = interpolated_values
+
+        except Exception:
+            # If interpolation fails, fill with zeros
+            heightmap[needs_interp] = 0.0
+
+        return heightmap
 
     def generate_heightmap(
         self,
@@ -110,6 +174,7 @@ class HeightmapGenerator:
         output_path: Optional[str] = None,
         bit_depth: int = 8,
         fill_missing: bool = True,
+        interpolation: Literal["none", "nearest", "linear", "cubic"] = "linear",
     ) -> tuple[str, int, int]:
         """
         Generate a square heightmap from a grid reference.
@@ -119,7 +184,9 @@ class HeightmapGenerator:
             size_km: Size of the area in kilometers
             output_path: Output PNG path (default: auto-generated)
             bit_depth: Bit depth for PNG (8 or 16)
-            fill_missing: If True, fill missing tiles with zero-height placeholders
+            fill_missing: If True, fill missing tiles with placeholders
+            interpolation: Interpolation method for missing tiles
+                          ('none' for zeros, 'nearest', 'linear', 'cubic')
 
         Returns:
             Tuple of (output_path, width, height)
@@ -131,6 +198,9 @@ class HeightmapGenerator:
         if bit_depth not in [8, 16]:
             raise ValueError("bit_depth must be 8 or 16")
 
+        if interpolation not in ["none", "nearest", "linear", "cubic"]:
+            raise ValueError("interpolation must be one of: none, nearest, linear, cubic")
+
         # Parse grid reference
         center_e, center_n, precision = parse_grid_reference(grid_ref)
 
@@ -140,9 +210,13 @@ class HeightmapGenerator:
             raise ValueError(f"No tiles found for grid reference {grid_ref}")
 
         # Load all tiles
+        # Use interpolation marker if interpolation is enabled (not 'none')
+        use_interpolation = interpolation != "none"
         tile_data = {}
         for tile_name in tiles:
-            data = self._load_tile(tile_name, fill_missing=fill_missing)
+            data = self._load_tile(
+                tile_name, fill_missing=fill_missing, interpolate=use_interpolation
+            )
             if data:
                 tile_data[tile_name] = data
 
@@ -151,6 +225,10 @@ class HeightmapGenerator:
 
         # Stitch tiles together
         heightmap = self._stitch_tiles(tile_data, center_e, center_n, size_km)
+
+        # Interpolate missing data if requested
+        if use_interpolation:
+            heightmap = self._interpolate_missing_data(heightmap, method=interpolation)
 
         # Normalise to output bit depth
         heightmap = self._normalise_heightmap(heightmap, bit_depth)
