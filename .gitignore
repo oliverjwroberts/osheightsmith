@@ -214,3 +214,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Data directory (keep directory, ignore contents)
+data/*
+!data/.gitkeep
+
+# Heightmaps directory (keep directory, ignore contents)
+heightmaps/*
+!heightmaps/.gitkeep
