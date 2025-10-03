@@ -13,8 +13,7 @@ This project uses [uv](https://docs.astral.sh/uv/), a Python package and project
 git clone https://github.com/oliverjwroberts/osheightsmith
 cd osheightsmith
 
-# Install dependencies with uv
-uv sync
+# No need to install dependencies as uv will create an on-demand environment from the pyproject.toml
 ```
 
 ## Setup
