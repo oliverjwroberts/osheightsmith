@@ -1,0 +1,7 @@
+[project]
+name = "osheightsmith"
+version = "0.1.0"
+description = "A Python CLI tool for creating PNG height maps from Ordnance Survey Terrain 50 data."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
